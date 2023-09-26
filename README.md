@@ -13,6 +13,6 @@ Download and install Anaconda from [here](https://www.anaconda.com/products/indi
 Open a terminal and run the following command:
 
 ```bash
- env create -f environment.yml
+conda env create -f environment.yml
 ```
 

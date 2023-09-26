@@ -8,11 +8,16 @@ dependencies:
   - opensesame-extension-updater
   - opensesame-plugin-psychopy
   - pygaze
+  - pyglet
+  - pyopengl
   - pyqtwebengine
   - python=3.10.12
   - qtconsole
   - rapunzel
   - wxpython
+  - gcc # [linux]
+  - libgcc # [linux]
+  - libstdcxx-ng # [linux]
   - pip:
       - psychopy
       - psychopy-sounddevice
@@ -20,5 +25,6 @@ dependencies:
       - soundfile
       - tomlkit
       - http://files.cogsci.nl/expyriment-0.10.0+opensesame2-py3-none-any.whl
+      - https://github.com/PascalKieslich/mousetrap-os/archive/master.zip
 
 prefix: R:\envs\mamba\percact23
