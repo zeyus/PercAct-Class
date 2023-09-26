@@ -1,13 +1,97 @@
 ---
 title: "Mousetracking Analysis"
-author: "Laura Bock Paulsen"
-date: "9/11/2022"
+author: "Laura Bock Paulsen, Luke Ring"
+date: "9/11/2022, updated 26/9/2023"
 output: html_document
 ---
 
+```{r helper_funcs, include=FALSE}
+# For the touchtracking data, we can save a bunch of
+# hassle by scaling the x/y coordinates within
+# subjects. One caveat, mousetrap data comes with x and y coordinates
+# in a column, but they are a chr with all the coordinates in one string
+# that's the reason this looks so complicated, basically we're just:
+# 1. splitting the string into a list
+# 2. scaling the list
+# 3. putting the list back together as a string
+
+scale_raw_mousetrap_data <- function(df) {
+  # Split data
+  scale_raw_data <- function(x) {
+    # helper function https://github.com/PascalKieslich/mousetrap/blob/master/R/import.R#L226C3-L243C66
+    split <- ","
+    # Remove all irrelevant characters
+    x <- gsub(pattern=paste0("[^-e0123456789.",split,"]"),replacement = "", x)
+
+    # Remove leading / end / double split characters
+    x <- gsub(pattern=paste0("^",split),replacement = "", x)
+    x <- gsub(pattern=paste0(split,"$"),replacement = "", x)
+    x <- gsub(pattern=paste0(split,split),replacement = "", x)
+
+    # Split according to specified character
+    x <- strsplit(x, split=split)
+
+    return(as.numeric(unlist(x)))
+  }
+  # get subject row indices by unique "subject_id" and "experiment_start_time" (in case two have the same id)
+  idxs <- df %>%
+    mutate(
+      idx = row_number()
+    ) %>%
+    select(
+      idx,
+      subject_id
+    )
+
+  # now loop and scale/standardize each subject's data
+  for (i in unique(idxs$subject_id)) {
+    # get the indices for this subject
+    idxs_sub <- idxs %>%
+      filter(
+        subject_id == i
+      ) %>%
+      pull(
+        idx
+      )
+
+    # get the data for this subject
+    subj_pos_data <- apply(
+      df[idxs_sub, c(
+          'xpos_tracking',
+          'ypos_tracking'
+        )
+      ],
+      c(1, 2),
+      split_raw_data
+    )
+
+    # get the lengths of the lists
+    xpos_lengths <- sapply(subj_pos_data[, 'xpos_tracking'], length)
+    ypos_lengths <- sapply(subj_pos_data[, 'ypos_tracking'], length)
+
+    # flatten and scale the lists
+    flattened_xpos <- scale(unlist(subj_pos_data[, 'xpos_tracking']))
+    flattened_ypos <- scale(unlist(subj_pos_data[, 'ypos_tracking']))
+
+    # put the data back together
+    for (j in 1:length(idxs_sub)) {
+      df[idxs_sub[j], 'xpos_tracking'] <- paste(flattened_xpos[1:xpos_lengths[j]], collapse = ',')
+      df[idxs_sub[j], 'ypos_tracking'] <- paste(flattened_ypos[1:ypos_lengths[j]], collapse = ',')
+
+      flattened_xpos <- flattened_xpos[(xpos_lengths[j] + 1):length(flattened_xpos)]
+      flattened_ypos <- flattened_ypos[(ypos_lengths[j] + 1):length(flattened_ypos)]
+    }
+  }
+  return(df)
+}
+
+```
+
 For the analysis of your very own mouse-tracking data, we will be using a package called MouseTrap. In order to get acquainted with the package, we will play around with data from a single participant conduction the circle-square experiment. 
 
-The documentation for the package can be found here: <https://www.rdocumentation.org/packages/mousetrap/versions/3.1.5/topics/mousetrap>.
+Alternatively, if you feel (ever so slightly) more adventerous, you can also use the data from the touch-tracking experiment. In this case, you will need to use the function "scale_raw_mousetrap_data" to scale the x and y coordinates within subjects. This is because the touch-tracking data needs to be standardized in some way despite differences in people's screen sizes. If you go for this option, you will have an advantage when it comes to analyzing your real data, because it will not be limited to a single subject (but you can ignore the screen size part, which is why it is included as a helper function and not part of the exercise itself). *Hint:* you can use `read_bulk` (from the package `readbulk`) to get all the CSV files from a single directory.
+
+The documentation for the package can be found here: [http://pascalkieslich.github.io/mousetrap/reference/mousetrap.html](http://pascalkieslich.github.io/mousetrap/reference/mousetrap.html).
 
 Use this page to solve the following steps by finding and applying appropriate mousetrap functions. Also, writing ?function_name() in the console is great way of reading about the function in question.
 
@@ -15,53 +99,71 @@ Call me for help whenever you get stuck (or take a quick look in the solutions f
 
 
 ### Install packages and load in the data
+
 ```{r}
 
 ```
 
 ### Turn the data into a mousetrap object
+
 Take a moment to look at the structure that it created. What are the elements, what information does it provide?
+
 ```{r}
 
 ```
 
 ### Make a quick plot using the mt_plot() function
+
 Try to understand what the lines mean and how to “read” the graph. What seems weird about it when you think about how the experiment task looked like?
+
 ```{r}
 
 ```
 
 ### Make a plot in which the lines are coloured by condition
+
 The demo-experiment had different trial types for which we have different predictions. Make a plot that distinguishes these two conditions, e.g. by different colors. 
+
 ```{r}
 
 ```
 
 ### Mirror-symmetric mapping of movements
+
 Find a function that does a mirror-symmetric mapping of all the movements from the right side to the left side so that all movements overlap. Plot again. What does this function also do?
+
+*Note:* For the touchtracker data, you will need to align the start points *first*.
+
 ```{r}
 
 ```
 
 ### Plot timestamps by xpos
+
 The standard plotting function shows x and y coordinates. Modify it so you plot timestamps by xpos. What do you see? What is this line in the beginning?
+
 ```{r}
 
 ```
 
 ### Find a function that removes the initial phase without mouse-movement
+
 Find a function to remove this “line” and plot the timestamps by xpos again. 
+
 ```{r}
 
 ```
 
 **Thought experiment:** If you now plotted x and y coordinates again, what would have changed in the plot? Think first, then try it! 
+
 ```{r}
 
 ```
 
 ### Time-normalize the data
+
 Apply the function “mt_time_normalize”
+
 ```{r}
 
 ```
@@ -69,58 +171,92 @@ Apply the function “mt_time_normalize”
 Now look at your data variable (the mt object) where a new matrix appeared. What do you notice? What does the function do? After you have thought about it yourself, check the documentation!
 
 ### Plot the normalized trajectories
+
 Find out how to plot the normalized trajectories instead of the raw data.
+
 ```{r}
 
 ```
 
 ### Play around with the mt_time_normalize() function
+
 Take a moment to play around with different numbers of steps in “mt_time_normalize” and see how that changes the shape of the trajectories, esp. when using very small numbers. Discuss what the decision about normalizing implies for the data analysis and interpretation. In the end, set the steps back to the default of 101.
+
 ```{r}
 
 ```
 
 ### Aggregated plots
+
 Now we want to visualize our “findings”. Find a function that will plot averages of all the “similar” movements and all the “dissimilar” movements.
 Think: Which trajectories do we need to use, the original or the time normalized? Why? Try plotting both to see whether you were right.
+
 ```{r}
 
 ```
 
 ### Apply the function mt_measures()
+
 Apply the function “mt_measures” and look at the outcome in your data variable. 
+
 ```{r}
 
 ```
 
 ### Aggregating measures
+
 Now find a function that helps you aggregate some measures of your pleasing over the two trial_types.
+
 ```{r}
 
 ```
 
 ### Interpret the results
+
 Take a moment to think what these “results” could mean if this was a proper experiment which was not run by your instructor. How would you interpret this? Does this match your hypothesis? Especially look at the MAD (maximum absolute deviation from the direct path), the AUC (area under the curve) and the reaction time. 
 
 
 ## Additional exercises
 
 ### Removing incorrect trials
+
 Normally, you'd want to remove incorrect trials. As the mouse_trap object does not function with tidyverse, figure out how to remove potential incorrect trials from your mousetrap object. 
+
 ```{r}
 
 ```
 
 ### Discussion of mt_align
+
 Would the function ‘mt_align’ be useful for this data? Why or why not?
+
 ```{r}
 
 ```
 
 
 ### ggplot
+
 As the mt_plot function uses ggplot, you can easily add themes, titles and such to make your plots look nice. Have a go at it!
+
 ```{r}
 
 ```
 
+### Bonus, animation
+
+If you want to get an animation of the frame-by-frame movements over time, the mousetrapck package allows you to create animations. To do this, you will need to download and install ImageMagick from https://www.imagemagick.org/.
+
+*Note:* If you are using Windows, you will need to specify the path to the convert.exe file in the im_path argument. You can find the path by searching for convert.exe in the start menu and then right-clicking on the file and selecting "Open file location". Then copy the path from the top of the window and paste it into the im_path argument.
+
+```{r}
+im_path = NULL
+# windows, example:
+# im_path = "C:/Program Files/ImageMagick-7.1.0-Q16-HDRI/convert.exe"
+mt_animate(
+    # ...
+)
+
+```
+
+:)

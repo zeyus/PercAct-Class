@@ -1,53 +1,209 @@
 ---
 title: "Mousetracking Analysis"
-author: "Laura Bock Paulsen"
-date: "9/11/2022"
+author: "Laura Bock Paulsen, Luke Ring"
+date: "9/11/2022, updated 26/9/2023"
 output: html_document
 ---
 
+```{r helper_funcs, include=FALSE}
+# For the touchtracking data, we can save a bunch of
+# hassle by scaling the x/y coordinates within
+# subjects. One caveat, mousetrap data comes with x and y coordinates
+# in a column, but they are a chr with all the coordinates in one string
+# that's the reason this looks so complicated, basically we're just:
+# 1. splitting the string into a list
+# 2. scaling the list
+# 3. putting the list back together as a string
+
+scale_raw_mousetrap_data <- function(df) {
+  # Split data
+  scale_raw_data <- function(x) {
+    # helper function https://github.com/PascalKieslich/mousetrap/blob/master/R/import.R#L226C3-L243C66
+    split <- ","
+    # Remove all irrelevant characters
+    x <- gsub(pattern=paste0("[^-e0123456789.",split,"]"),replacement = "", x)
+
+    # Remove leading / end / double split characters
+    x <- gsub(pattern=paste0("^",split),replacement = "", x)
+    x <- gsub(pattern=paste0(split,"$"),replacement = "", x)
+    x <- gsub(pattern=paste0(split,split),replacement = "", x)
+
+    # Split according to specified character
+    x <- strsplit(x, split=split)
+
+    return(as.numeric(unlist(x)))
+  }
+  # get subject row indices by unique "subject_id" and "experiment_start_time" (in case two have the same id)
+  idxs <- df %>%
+    mutate(
+      idx = row_number()
+    ) %>%
+    select(
+      idx,
+      subject_id
+    )
+
+  # now loop and scale/standardize each subject's data
+  for (i in unique(idxs$subject_id)) {
+    # get the indices for this subject
+    idxs_sub <- idxs %>%
+      filter(
+        subject_id == i
+      ) %>%
+      pull(
+        idx
+      )
+
+    # get the data for this subject
+    subj_pos_data <- apply(
+      df[idxs_sub, c(
+          'xpos_tracking',
+          'ypos_tracking'
+        )
+      ],
+      c(1, 2),
+      split_raw_data
+    )
+
+    # get the lengths of the lists
+    xpos_lengths <- sapply(subj_pos_data[, 'xpos_tracking'], length)
+    ypos_lengths <- sapply(subj_pos_data[, 'ypos_tracking'], length)
+
+    # flatten and scale the lists
+    flattened_xpos <- scale(unlist(subj_pos_data[, 'xpos_tracking']))
+    flattened_ypos <- scale(unlist(subj_pos_data[, 'ypos_tracking']))
+
+    # put the data back together
+    for (j in 1:length(idxs_sub)) {
+      df[idxs_sub[j], 'xpos_tracking'] <- paste(flattened_xpos[1:xpos_lengths[j]], collapse = ',')
+      df[idxs_sub[j], 'ypos_tracking'] <- paste(flattened_ypos[1:ypos_lengths[j]], collapse = ',')
+
+      flattened_xpos <- flattened_xpos[(xpos_lengths[j] + 1):length(flattened_xpos)]
+      flattened_ypos <- flattened_ypos[(ypos_lengths[j] + 1):length(flattened_ypos)]
+    }
+  }
+  return(df)
+}
+
+```
+
+
 For the analysis of your very own mouse-tracking data, we will be using a package called MouseTrap. In order to get acquainted with the package, we will play around with data from a single participant conduction the circle-square experiment. 
 
-The documentation for the package can be found here: <https://www.rdocumentation.org/packages/mousetrap/versions/3.1.5/topics/mousetrap>.
+Alternatively, if you feel (ever so slightly) more adventerous, you can also use the data from the touch-tracking experiment. In this case, you will need to use the function "scale_raw_mousetrap_data" to scale the x and y coordinates within subjects. This is because the touch-tracking data needs to be standardized in some way despite differences in people's screen sizes. If you go for this option, you will have an advantage when it comes to analyzing your real data, because it will not be limited to a single subject (but you can ignore the screen size part, which is why it is included as a helper function and not part of the exercise itself). *Hint:* you can use `read_bulk` (from the package `readbulk`) to get all the CSV files from a single directory.
+
+The documentation for the package can be found here: [http://pascalkieslich.github.io/mousetrap/reference/mousetrap.html](http://pascalkieslich.github.io/mousetrap/reference/mousetrap.html).
 
 Use this page to solve the following steps by finding and applying appropriate mousetrap functions. Also, writing ?function_name() in the console is great way of reading about the function in question.
 
 Call me for help whenever you get stuck (or take a quick look in the solutions file) :D
 
 ### Install packages and load in the data
-```{r}
-# loading packages
-pacman::p_load(mousetrap, tidyverse)
 
+*Note:* If you haven't encountered pacman before, it is an easy way to download and load packages for R. You will (only once) need to install packman with `install.packages("pacman")` in R. Afterwards, you can load and install packages with `pacman::p_load(package1, package2, package3)`. If you want to install a package without loading it, you can use `pacman::p_load(package1, package2, package3)`.
+
+```{r setup, include=FALSE}
+# loading packages
+pacman::p_load(mousetrap, tidyverse, readbulk)
+
+```
+
+Single file:
+
+```{r read_data_single}
 # loading in data
-d <- read_csv('example_data/subject-3.csv')
+d <- read_csv('C_Class_02/mousetracking/example_data/subject-3.csv')
+
+```
+
+Touchtracker data:
+
+```{r read_data_tt}
+d_tt <- read_bulk('C_Class_02/mousetracking/example_data/touchtracker/', 
+          extension = 'csv'
+        )
+
+d_tt <- scale_raw_mousetrap_data(d_tt)
+
 ```
 
 ### Turn the data into a mousetrap object
-```{r}
+
+Single file:
+
+```{r mousetrap_single}
 m <- mt_import_mousetrap(d)
+
 ```
+
+Touchtracker data:
+
+```{r mousetrap_tt}
+m_tt <- mt_import_mousetrap(
+  d_tt,
+  mt_id_label = c(
+    "log_sequence",
+    "subject_id",
+    "experiment_start_time"),
+    verbose = TRUE
+
+)
+```
+
 Take a moment to look at the structure that it created. What are the elements, what information does it provide?
 
 ### Make a quick plot using the mt_plot() function
+
 Try to understand what the lines mean and how to “read” the graph. What seems weird about it when you think about how the experiment task looked like?
-```{r}
+
+Single file:
+
+```{r plotting_single}
 # initial plot
 mt_plot(m)
 
 # specified
 mt_plot(data = m, use = 'trajectories')
+
+```
+
+Touchtracker data:
+
+```{r plotting_tt}
+# initial plot with touchtracker data
+# note, different screen sizes will mean the data looks like it starts in different places
+mt_plot(m_tt)
+
 ```
 
 ### Make a plot in which the lines are coloured by condition
+
 The demo-experiment had different trial types for which we have different predictions. Make a plot that distinguishes these two conditions, e.g. by different colors. 
-```{r}
+
+Single file:
+
+```{r condition_plot}
 mt_plot(m, color = 'trial_type')
+
+```
+
+Touchtracker data:
+
+```{r condition_plot_tt}
+mt_plot(m_tt, color = 'trial_subtype', wrap_var = 'trial_type')
+
 ```
 
 
 ### Mirror-symmetric mapping of movements
+
 Find a function that does a mirror-symmetric mapping of all the movements from the right side to the left side so that all movements overlap. Plot again. What does this function also do?
-```{r}
+
+*Note:* For the touchtracker data, you will need to align the start points *first*.
+
+Single file:
+
+```{r mirror_mapping_single}
 # align the mouse trajectories to one side
 m <- mt_remap_symmetric(
   m, 
@@ -63,29 +219,97 @@ mt_plot(
   )
 
 # turns the data upside down, so it resembles the actual mouse tracking task
+
 ```
 
+Touchtracker data:
+
+```{r mirror_mapping_tt}
+# for touchtracker data, 1st align starts
+m_tt <- mt_align_start(
+  m_tt,
+  use = 'trajectories',
+  dimensions = c("xpos", "ypos")
+)
+
+mt_plot(
+  m_tt, 
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type',
+  x = 'xpos',
+  y = 'ypos'
+)
+
+# now we can remap the trajectories
+# for touchtracker data
+m_tt <- mt_remap_symmetric(
+  m_tt, 
+  use = 'trajectories',
+  remap_xpos = "right",
+  remap_ypos = "up" 
+)
+
+# plot again
+mt_plot(
+  m_tt, 
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type',
+)
+
+# Now that's looking better!
+
+```
+
+
 ### Plot timestamps by xpos
+
+
 The standard plotting function shows x and y coordinates. Modify it so you plot timestamps by xpos. What do you see? What is this line in the beginning?
-```{r}
+
+Single file:
+
+```{r timestamps_xpos_single}
 mt_plot(
   m, 
   x = 'timestamps', # modifying the x-axis to plot timestamps
   y = 'xpos',       # modifying the y-axis to plot the xpos
   use = 'trajectories',
   color = 'trial_type' 
+)
+
+```
+
+Touchtracker data:
+
+```{r timestamps_xpos_tt}
+# touchtracker data
+mt_plot(
+  m_tt, 
+  x = 'timestamps', # modifying the x-axis to plot timestamps
+  y = 'xpos',       # modifying the y-axis to plot the xpos
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
 )
 ```
 
 ### Find a function that removes the initial phase without mouse-movement
+
 Find a function to remove this “line”.
 
-```{r}
+*Note:* this step isn't necessary for the touchtracker data, as it only records when movement starts.
+
+Single file: 
+
+```{r remove_initiation_single}
 m <- mt_exclude_initiation(m)
 ```
 
 Before plotting again (timestamps and xpos) think about how you expect it to look. Then plot it, to see if you were right.
-```{r}
+
+```{r timestamps_xpos_single}
 mt_plot(
   m, 
   x = 'timestamps', # modifying the x-axis to plot timestamps
@@ -93,32 +317,69 @@ mt_plot(
   use = 'trajectories',
   color = 'trial_type' 
 )
+
 ```
 
-
 ### Time-normalize the data
+
 Apply the function “mt_time_normalize”
-```{r}
+
+Single file:
+
+```{r time_normalize_single}
 m <- mt_time_normalize(m)
+
+```
+
+Touchtracker data:
+
+```{r time_normalize_tt}
+m_tt <- mt_time_normalize(m_tt)
+
 ```
 
 Now look at your data variable (the mt object) where a new matrix appeared. What do you notice? What does the function do? After you have thought about it yourself, check the documentation!
 
 
 ### Plot the normalized trajectories
+
 Find out how to plot the normalized trajectories instead of the raw data.
-```{r}
+
+Single file:
+
+```{r plot_normalized_single}
 mt_plot(
   m, 
+  x = 'timestamps', # modifying the x-axis to plot timestamps
+  y = 'xpos',       # modifying the y-axis to plot the xpos
   use = 'tn_trajectories',
   color = 'trial_type'
 )
+
+```
+
+Touchtracker data:
+
+```{r plot_normalized_tt}
+mt_plot(
+  m_tt, 
+  x = 'timestamps', # modifying the x-axis to plot timestamps
+  y = 'xpos',       # modifying the y-axis to plot the xpos
+  use = 'tn_trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+)
+
 ```
 
 
 ### Play around with the mt_time_normalize() function
+
 Take a moment to play around with different numbers of steps in “mt_time_normalize” and see how that changes the shape of the trajectories, esp. when using very small numbers. Discuss what the decision about normalizing implies for the data analysis and interpretation. In the end, set the steps back to the default of 101.
-```{r}
+
+Single file:
+
+```{r time_normalize_steps_single}
 m_tn <- mt_time_normalize(
   m,
   nsteps = 101
@@ -132,11 +393,33 @@ mt_plot(
 )
 ```
 
+Touchtracker data:
+
+```{r time_normalize_steps_tt}
+m_tt_tn <- mt_time_normalize(
+  m_tt,
+  nsteps = 101,
+  verbose = TRUE
+)
+
+#plot
+mt_plot(
+  m_tt_tn, 
+  use = 'tn_trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+)
+
+```
 
 ### Aggregated plots
+
 Now we want to visualize our “findings”. Find a function that will plot averages of all the “similar” movements and all the “dissimilar” movements.
 Think: Which trajectories do we need to use, the original or the time normalized? Why? Try plotting both to see whether you were right.
-```{r}
+
+Single file:
+
+```{r aggregated_plot_single}
 mt_plot_aggregate(
   m, 
   use = 'trajectories',
@@ -144,24 +427,61 @@ mt_plot_aggregate(
 )
 
 mt_plot_aggregate(
-  m, 
+  m_tn, 
   use = 'tn_trajectories',
   color = 'trial_type'
 ) + 
   labs(
     title = 'Aggregated time-normalized mouse trajectories')
+
 ```
 
+Touchtracker data:
+
+```{r aggregated_plot_tt}
+mt_plot_aggregate(
+  m_tt, 
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+)
+
+mt_plot_aggregate(
+  m_tt_tn, 
+  use = 'tn_trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+) + 
+  labs(
+    title = 'Aggregated time-normalized mouse trajectories')
+
+```
 
 ### Apply the function mt_measures()
+
 Apply the function “mt_measures” and look at the outcome in your data variable. 
-```{r}
+
+Single file:
+
+```{r mt_measures_single}
 m <- mt_measures(m, use = 'tn_trajectories')
+
+```
+
+Touchtracker data:
+
+```{r mt_measures_tt}
+m_tt <- mt_measures(m_tt, use = 'tn_trajectories')
+
 ```
 
 ### Aggregating measures
+
 Now find a function that helps you aggregate some measures of your pleasing over the two trial_types.
-```{r}
+
+Single file:
+
+```{r mt_measures_ag_single}
 mt_measures_ag <- mt_aggregate(
   m,
   use = 'measures',
@@ -170,34 +490,68 @@ mt_measures_ag <- mt_aggregate(
   )
 
 mt_measures_ag
+
 ```
 
+Touchtracker data:
+
+```{r mt_measures_ag_tt}
+mt_measures_ag_tt <- mt_aggregate(
+  m_tt,
+  use = 'measures',
+  use_variables = c('MAD', 'xpos_flips','AUC', 'RT'), # if you want all of the measures, exclude this line
+  use2_variables = c('trial_type', 'trial_subtype')
+  )
+
+mt_measures_ag_tt
+  
+```
 
 ### Interpret the results
-Take a moment to think what these “results” could mean if this was a proper experiment which was not run by your instructor. How would you interpret this? Does this match your hypothesis? Especially look at the MAD (maximum absolute deviation from the direct path), the AUC (area under the curve) and the reaction time. 
 
+Take a moment to think what these “results” could mean if this was a proper experiment which was not run by your instructor. How would you interpret this? Does this match your hypothesis? Especially look at the MAD (maximum absolute deviation from the direct path), the AUC (area under the curve) and the reaction time. 
 
 
 ## Additional exercises
 
+
 ### Removing incorrect trials
+
 Normally, you'd want to remove incorrect trials. As the mouse_trap object does not function with tidyverse, figure out how to remove potential incorrect trials from your mousetrap object. 
-```{r}
+
+Single file:
+
+```{r remove_incorrect_single}
 m <- mt_subset(
   m,
   correct == '1'
 )
+
+```
+
+Touchtracker data:
+
+```{r remove_incorrect_tt}
+m_tt <- mt_subset(
+  m_tt,
+  correct == 'true'
+)
+
 ```
 
 ### Discussion of mt_align
+
 Would the function ‘mt_align’ be useful for this data? Why or why not?
+
 It can do the same as mt_remap symmetric, but it can also be used to rescale (here 'space-normalize') the data. 
 
 You could align the starting and end position, as we are only interested in the trajectory of the mouse movement, not the endpoint in it self. Also, because the end point could be anywhere within the stimulus (circle or square), it looks nice to drag the trajectories to the same point. 
 
 As we only have one participant, I wouldn't say it is necessary (or beneficial, besides it looks nice). 
 
-```{r}
+Single file:
+
+```{r align_single}
 # an example of aligning the data
 m_align <- mt_align(
   m,
@@ -208,16 +562,42 @@ m_align <- mt_align(
   align_end = T
 )
   
-  # plot again
+# plot again
 mt_plot(
   m_align, 
   use = 'trajectories',
 )
+
+```
+
+Touchtracker data:
+
+```{r align_tt}
+# an example of aligning the data, we already aligned the start, so we only need to align the end
+m_tt_align <- mt_align(
+  m_tt,
+  use = 'trajectories',
+  dimensions = c("xpos", "ypos"),
+  coordinates = c(0,0,-350,250),
+  align_end = TRUE
+)  
+# plot again
+mt_plot(
+  m_tt_align, 
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+)
+
 ```
 
 ### ggplot
+
 As the mt_plot function uses ggplot, you can easily add themes, titles and such to make your plots look nice. Have a go at it!
-```{r}
+
+Single file:
+
+```{r ggplot_single}
 mt_plot(
   m_align, 
   use = 'trajectories',
@@ -225,6 +605,58 @@ mt_plot(
 ) + 
   theme_minimal() +
   labs(title = 'Alligned mouse-tracking data', x = 'Postition (x)', y = 'Postistion(y)', color = 'Trial Type')
+
 ```
 
+Touchtracker data:
+
+```{r ggplot_tt}
+mt_plot(
+  m_tt_align, 
+  use = 'trajectories',
+  color = 'trial_subtype',
+  wrap_var = 'trial_type'
+) + 
+  theme_minimal() +
+  labs(title = 'Alligned mouse-tracking data', x = 'Postition (x)', y = 'Postistion(y)', color = 'Trial Type')
+
+```
+
+### Bonus, animation
+
+If you want to get an animation of the frame-by-frame movements over time, the mousetrapck package allows you to create animations. To do this, you will need to download and install ImageMagick from https://www.imagemagick.org/.
+
+*Note:* If you are using Windows, you will need to specify the path to the convert.exe file in the im_path argument. You can find the path by searching for convert.exe in the start menu and then right-clicking on the file and selecting "Open file location". Then copy the path from the top of the window and paste it into the im_path argument.
+
+Single file:
+
+```{r animation_single}
+im_path = NULL
+# windows, example:
+# im_path = "C:/Program Files/ImageMagick-7.1.0-Q16-HDRI/convert.exe"
+mt_animate(
+  m,
+  filename = "C_Class_02/mousetracking/example_animation.gif",
+  im_path = im_path,
+  loop = TRUE,
+  verbose = TRUE
+)
+
+```
+
+Touchtracker data:
+
+```{r animation_tt}
+im_path = NULL
+# windows, example:
+# im_path = "C:/Program Files/ImageMagick-7.1.0-Q16-HDRI/convert.exe"
+mt_animate(
+  m_tt,
+  filename = "C_Class_02/mousetracking/example_animation_tt.gif",
+  im_path = im_path,
+  loop = TRUE,
+  verbose = TRUE
+)
+
+```
 
