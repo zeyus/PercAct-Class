@@ -15,9 +15,6 @@ dependencies:
   - qtconsole
   - rapunzel
   - wxpython
-  - gcc # [linux]
-  - libgcc # [linux]
-  - libstdcxx-ng # [linux]
   - pip:
       - psychopy
       - psychopy-sounddevice
