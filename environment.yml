@@ -4,16 +4,21 @@ channels:
   - conda-forge
 dependencies:
   - opensesame
+  - opensesame-extension-osweb
   - opensesame-extension-updater
   - opensesame-plugin-psychopy
   - pygaze
-  - python=3.9.17
+  - python=3.8.17
+  - pip
+  - pyqtwebengine
+  - qtconsole
+  - rapunzel
+  - wxpython
   - pip:
-      - psychopy
-      - psychopy-sounddevice
       - pygame
       - soundfile
       - tomlkit
       - http://files.cogsci.nl/expyriment-0.10.0+opensesame2-py3-none-any.whl
+      - psychopy
+      - psychopy-sounddevice
       - https://github.com/PascalKieslich/mousetrap-os/archive/master.zip
-prefix: R:\envs\mamba\percact23
