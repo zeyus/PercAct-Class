@@ -4,7 +4,6 @@ channels:
   - conda-forge
 dependencies:
   - opensesame
-  - opensesame-extension-osweb
   - opensesame-extension-updater
   - opensesame-plugin-psychopy
   - pip
