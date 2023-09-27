@@ -9,8 +9,6 @@ dependencies:
   - opensesame-plugin-psychopy
   - pip
   - pygaze
-  - pyglet
-  - pyqtwebengine
   - python=3.10.12
   - pip:
       - psychopy
