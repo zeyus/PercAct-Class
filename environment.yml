@@ -6,7 +6,6 @@ dependencies:
   - opensesame
   - opensesame-extension-updater
   - opensesame-plugin-psychopy
-  - pip
   - pygaze
   - python=3.10.12
   - pip:
