@@ -62,7 +62,7 @@ scale_raw_mousetrap_data <- function(df) {
         )
       ],
       c(1, 2),
-      split_raw_data
+      scale_raw_data
     )
 
     # get the lengths of the lists
