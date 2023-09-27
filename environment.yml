@@ -7,7 +7,7 @@ dependencies:
   - opensesame-extension-updater
   - opensesame-plugin-psychopy
   - pygaze
-  - python=3.10.12
+  - python=3.9
   - pip:
       - psychopy
       - psychopy-sounddevice
