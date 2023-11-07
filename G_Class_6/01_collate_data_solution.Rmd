@@ -175,6 +175,50 @@ process_qtm_tsv <- function(
 
 }
 
+
+
+gap_fill_linear <- function(x) {
+  "This function does a linear gap fill for a vector.
+
+  Only columns with at least 2 non-NA values will be gap filled.
+
+  Args:
+    x (vector): The vector to gap fill.
+
+  Returns:
+    The gap filled vector.
+  "
+  # get the indices of the NA values
+  na_indices <- which(is.na(x))
+  # get the indices of the non-NA values
+  non_na_indices <- which(!is.na(x))
+
+  if (length(na_indices) == 0) {
+    # if there are no NA values, just return the vector
+    return(x)
+  }
+
+  if (length(non_na_indices) < 2) {
+    # if there are less than 2 non-NA values, we can't do a linear interpolation
+    return(x)
+  }
+  # get the values of the non-NA indices
+  non_na_values <- x[non_na_indices]
+  # get the values of the NA indices
+  na_values <- x[na_indices]
+  # now we can do a linear interpolation
+  na_values <- approx(
+    x = non_na_indices,
+    y = non_na_values,
+    xout = na_indices,
+    method = "linear"
+  )$y
+  # now we can replace the NA values with the interpolated values
+  x[na_indices] <- na_values
+  # and return the vector
+  return(x)
+}
+
 ```
 
 ```{r 'Load Trajectory Labels'}
@@ -290,15 +334,9 @@ traj_data %>%
 # we are only going to do a linear gap fill, it's not elegant, but it works
 # we will do this for each marker x, y, and z
 
-# let's sanity-check the data to make sure the proportion of NAs for a given marker
-# is not too high, also we can find the longest sequence of NAs for a given marker
-nas_by_marker <- traj_data %>% 
-  select(contains("_x")) %>% 
-  is.na() %>% 
-  colSums() %>% 
-  as_tibble() %>%
-  mutate(marker = marker_names) %>%
-  arrange(desc(value))
+# get NAs by condition, and marker
+
+
 
 # This needs to be checked to see if it is acceptable
 nas_by_marker %>% 
@@ -317,6 +355,7 @@ nas_by_marker %>%
     y = "Proportion of NA values",
     title = "Proportion of NA values by marker"
   )
+
 
 # Now we can get the longest sequence of NAs for each marker
 longest_na_seq <- traj_data %>% 
@@ -355,81 +394,65 @@ longest_na_seq %>%
     title = "Longest sequence of NA values by marker"
   )
 
-# first we can define a function to gap fill a single column
-gap_fill <- function(x) {
-  # get the indices of the NA values
-  na_indices <- which(is.na(x))
-  # get the indices of the non-NA values
-  non_na_indices <- which(!is.na(x))
-
-  if (length(na_indices) == 0) {
-    # if there are no NA values, just return the vector
-    return(x)
-  }
-
-  if (length(non_na_indices) < 2) {
-    # if there are less than 2 non-NA values, we can't do a linear interpolation
-    return(x)
-  }
-  # get the values of the non-NA indices
-  non_na_values <- x[non_na_indices]
-  # get the values of the NA indices
-  na_values <- x[na_indices]
-  # now we can do a linear interpolation
-  na_values <- approx(
-    x = non_na_indices,
-    y = non_na_values,
-    xout = na_indices,
-    method = "linear"
-  )$y
-  # now we can replace the NA values with the interpolated values
-  x[na_indices] <- na_values
-  # and return the vector
-  return(x)
-}
 
 # plot a single marker's x, y, and z values before and after gap filling
 traj_data %>% 
-  select(contains("B_hand_left")) %>% 
+  select(contains("B_hand_left") | elapsed_time) %>% 
   pivot_longer(
     cols = contains("B_hand_left"),
+    cols_vary = "slowest",
     names_to = "marker",
     values_to = "value"
-  ) %>% 
+  ) %>%
   mutate(
-    index = row_number(),
+    elapsed_time = rep(traj_data$elapsed_time, 3),
+    condition = rep(traj_data$condition, 3),
     marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
-  ) %>% 
-  ggplot(aes(x = index, y = value, color = marker)) +
+  ) %>%
+  ggplot(aes(x = elapsed_time, y = value, color = marker)) +
   geom_line() +
   theme_minimal() +
+  facet_wrap(~condition) +
   labs(
-    x = "Frame index",
+    x = "Elapsed time",
     y = "Marker position",
     title = "Marker position before gap filling"
   )
 
-# now we can apply this function to each column
+# now we can apply our linear gap fill function to each column, by condition
 traj_data <- traj_data %>% 
-  mutate_at(vars(contains("_x")), gap_fill) %>% 
-  mutate_at(vars(contains("_y")), gap_fill) %>% 
-  mutate_at(vars(contains("_z")), gap_fill)
+  group_by(condition) %>% 
+  mutate_at(
+    vars(contains("_x")),
+    gap_fill_linear
+  ) %>% 
+  mutate_at(
+    vars(contains("_y")),
+    gap_fill_linear
+  ) %>% 
+  mutate_at(
+    vars(contains("_z")),
+    gap_fill_linear
+  )
 
 # plot a single marker's x, y, and z values before and after gap filling
 traj_data %>% 
-  select(contains("B_hand_left")) %>% 
+  select(contains("B_hand_left") | elapsed_time) %>% 
   pivot_longer(
     cols = contains("B_hand_left"),
+    cols_vary = "slowest",
     names_to = "marker",
     values_to = "value"
   ) %>% 
   mutate(
-    index = row_number(),
+    elapsed_time = rep(traj_data$elapsed_time, 3),
+    condition = rep(traj_data$condition, 3),
     marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
   ) %>% 
-  ggplot(aes(x = index, y = value, color = marker)) +
+  ggplot(aes(x = elapsed_time, y = value, color = marker)) +
   geom_line() +
   theme_minimal() +
+  facet_wrap(~condition) +
   labs(
     x = "Frame index",
     y = "Marker position",
