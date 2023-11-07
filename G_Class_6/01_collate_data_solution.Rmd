@@ -402,7 +402,6 @@ traj_data %>%
   ) %>% 
   ggplot(aes(x = index, y = value, color = marker)) +
   geom_line() +
-  facet_wrap(~marker, scales = "free_y") +
   theme_minimal() +
   labs(
     x = "Frame index",
@@ -430,7 +429,6 @@ traj_data %>%
   ) %>% 
   ggplot(aes(x = index, y = value, color = marker)) +
   geom_line() +
-  facet_wrap(~marker, scales = "free_y") +
   theme_minimal() +
   labs(
     x = "Frame index",
