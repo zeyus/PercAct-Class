@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 # with install.packages("pacman")
 
 # packages to load
-pacman::p_load("XML", "tidyverse", "fs", "assertthat", "stringi")
+pacman::p_load("XML", "tidyverse", "fs", "assertthat", "stringi", "dtw")
 
 # make sure we are in the G_Class_6 directory
 wd <- getwd()
@@ -329,10 +329,61 @@ traj_data %>%
 
 ```
 
+```{r 'Check for large jumps in trajectory data'}
+# we want to check for large jumps in the data
+# this indicates potential label errors
 
-```{r 'Gap-fill trajectory data'}	
-# we are only going to do a linear gap fill, it's not elegant, but it works
-# we will do this for each marker x, y, and z
+# we will do this by calculating the distance between each marker for each time point
+# of course, by condition
+
+# calculate euclidean distance between each marker
+# we have the marker names in traj_labels
+
+# first we need to get the marker names
+marker_names <- traj_labels$traj_names
+
+# now we can calculate the euclidean distance between each marker (using x, y, z)
+# we will do this by condition
+marker_distances <- traj_data %>% 
+  group_by(condition) %>% 
+  mutate_at(
+    vars(contains("_x") | contains("_y") | contains("_z")),
+    ~ .x - lag(.x)
+  )
+
+# now we can calculate the euclidean distance per maker
+marker_distances_euclidean <- marker_distances %>% 
+  pivot_longer(
+    cols = contains("_x") | contains("_y") | contains("_z"),
+    cols_vary = "slowest",
+    names_to = "marker",
+    values_to = "value"
+  ) %>%
+  mutate(
+    marker = stri_replace_last_regex(marker, "_x|_y|_z", "")
+  ) %>%
+  group_by(index, condition, marker) %>%
+  summarise_at(
+    vars(value),
+    ~ sqrt(sum(.^2, na.rm = TRUE))
+  )
+
+# now we can plot the series for each marker, and see if anything stands out
+marker_distances_euclidean %>% 
+  ggplot(aes(x = index, y = value, color = marker)) +
+  geom_line() +
+  theme_minimal() +
+  facet_wrap(~condition) +
+  labs(
+    x = "Index",
+    y = "Euclidean distance",
+    title = "Euclidean distance between markers"
+  )
+
+
+```
+
+```{r 'Get informatnion about NAs'}	
 
 # get NAs counts
 # by condition, marker
@@ -408,20 +459,59 @@ longest_na_seq %>%
     y = "Longest NA sequence",
     title = "Longest NA sequence by marker"
   )
+```
 
+```{r 'Choose markers of interest'}
+# we want to choose the markers of interest
+# we will choose the following markers:
+# - {A,B}_head_top
+# - {A,B}_hand_right
+# you may of course choose different markers, or if those ones were
+# particularly bad, you should select others
 
+# get the markers of interest
+markers_of_interest <- c(
+  "A_hand_left",
+  "B_hand_left",
+  "A_hand_right",
+  "B_hand_right"
+)
+
+# now we can select the markers of interest
+selected_traj_data <- traj_data %>% 
+  select(
+    contains(markers_of_interest) | 
+      contains("elapsed_time") | 
+      contains("condition") | 
+      contains("group") |
+      contains("index")
+  )
+
+```
+
+```{r 'Gap fill trajectory data'}
+# we are only going to do a linear gap fill, it's not elegant, but it works
+# we will do this for each marker x, y, and z
+sel_idx = 1
 # plot a single marker's x, y, and z values before and after gap filling
-traj_data %>% 
-  select(contains("B_hand_left") | elapsed_time) %>% 
+selected_traj_data %>% 
+  select(contains(markers_of_interest[sel_idx]) | elapsed_time | condition) %>% 
   group_by(condition) %>%
   pivot_longer(
-    cols = contains("B_hand_left"),
+    cols = contains(markers_of_interest[sel_idx]),
     cols_vary = "slowest",
     names_to = "marker",
     values_to = "value"
   ) %>%
   mutate(
-    marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
+    marker = factor(
+      marker,
+      levels = c(
+        paste0(markers_of_interest[sel_idx], "_x"),
+        paste0(markers_of_interest[sel_idx], "_y"),
+        paste0(markers_of_interest[sel_idx], "_z")
+      )
+    )
   ) %>%
   ggplot(aes(x = elapsed_time, y = value, color = marker)) +
   geom_line() +
@@ -434,7 +524,7 @@ traj_data %>%
   )
 
 # now we can apply our linear gap fill function to each column, by condition
-traj_data <- traj_data %>% 
+selected_traj_data <- selected_traj_data %>% 
   group_by(condition) %>% 
   mutate_at(
     vars(contains("_x")),
@@ -447,20 +537,28 @@ traj_data <- traj_data %>%
   mutate_at(
     vars(contains("_z")),
     gap_fill_linear
-  )
+  ) %>%
+  ungroup()
 
-# plot a single marker's x, y, and z values before and after gap filling
-traj_data %>% 
-  select(contains("B_hand_left") | elapsed_time) %>% 
+# plot a single marker's x, y, and z after gap filling
+selected_traj_data %>% 
+  select(contains(markers_of_interest[sel_idx]) | elapsed_time | condition) %>% 
   group_by(condition) %>%
   pivot_longer(
-    cols = contains("B_hand_left"),
+    cols = contains(markers_of_interest[sel_idx]),
     cols_vary = "slowest",
     names_to = "marker",
     values_to = "value"
   ) %>%
   mutate(
-    marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
+    marker = factor(
+      marker,
+      levels = c(
+        paste0(markers_of_interest[sel_idx], "_x"),
+        paste0(markers_of_interest[sel_idx], "_y"),
+        paste0(markers_of_interest[sel_idx], "_z")
+      )
+    )
   ) %>%
   ggplot(aes(x = elapsed_time, y = value, color = marker)) +
   geom_line() +
@@ -475,4 +573,159 @@ traj_data %>%
 ```
 
 
-```{r 'Plot trajectory data'}
+```{r 'Cross correlation analysis'}
+# we want to do a cross correlation analysis
+# we will do this by condition and marker using our markers_of_interest
+
+# first we need to get the data into a format that is suitable for cross correlation
+# we will do this by condition and marker
+# we will also do this for each axis (x, y, z),
+# using each axis seperately will simplify the analysis
+# otherwise we need to use another summary statistic
+
+# we know there are always two subjects, and the
+# marker labels start with the subject (A or B)
+# we want to cross correlate between the same marker for
+# subject A and subject B
+
+traj_xcor_data <- selected_traj_data %>% 
+  group_by(condition) %>% 
+  pivot_longer(
+    cols = contains("_x") | contains("_y") | contains("_z"),
+    cols_vary = "slowest",
+    names_to = "marker",
+    values_to = "value"
+  ) %>%
+  mutate(
+    subject = stri_extract_last_regex(marker, "^[AB]"),
+    marker = stri_replace_last_regex(marker, "^[AB]_", "")
+  )
+
+
+# now we can do the cross correlation analysis using ccf
+# we want to compare e.g. A_head_top_x with B_head_top_x
+# for each condition
+
+# define an empty list to store the results
+xcor_results <- list()
+for (marker in markers_of_interest) {
+  # get the data for the marker
+  marker_data <- traj_xcor_data %>% 
+    filter(marker == marker)
+  # get the unique conditions
+  conds <- unique(marker_data$condition)
+  # now we can do the cross correlation analysis
+  for (cond in conds) {
+    # get the data for the condition
+    cond_data <- marker_data %>% 
+      filter(condition == cond)
+    # now we can do the cross correlation analysis
+    # we will do this for each axis
+    for (axis in c("_x", "_y", "_z")) {
+      # get the data for the axis
+      axis_data <- cond_data %>% 
+        filter(str_detect(marker, axis))
+      # now we can do the cross correlation analysis
+      # we will do this for each subject
+      results <- ccf(
+        x = axis_data[axis_data$subject == "A", "value"],
+        y = axis_data[axis_data$subject == "B", "value"],
+        na.action = na.omit,
+        plot = FALSE
+      )
+      # make a tibble with the results
+      results <- tibble(
+        lagv = results$lag,
+        acfv = results$acf,
+        marker = marker,
+        condition = cond
+      )
+      xcor_results[[length(xcor_results) + 1]] <- results
+    }
+  }
+}
+
+# let's put all the acf results into a single tibble
+xcor_results <- do.call(bind_rows, xcor_results)
+
+
+# now we can plot the results for each lag point
+xcor_results %>%
+  ggplot(aes(x = lagv, y = acfv, color = marker)) +
+  geom_point() +
+  theme_minimal() +
+  facet_wrap(c(~condition, ~marker)) +
+  labs(
+    x = "Lag",
+    y = "Autocorrelation",
+    title = "Autocorrelation by lag"
+  )
+
+# now let's plot the max acf for each condition and marker
+xcor_results %>%
+  group_by(condition, marker) %>%
+  summarise_at(
+    vars(acfv),
+    ~ max(.)
+  ) %>%
+  ggplot(aes(x = condition, y = acfv, fill = condition)) +
+  geom_col(
+    show.legend = FALSE
+  ) +
+  theme_minimal() +
+  facet_wrap(~marker) +
+  labs(
+    x = "Condition",
+    y = "Max autocorrelation",
+    title = "Max autocorrelation by condition"
+  )
+
+```
+
+```{r 'Dynamic time warping for a single marker'}
+# we want to do dynamic time warping for a single marker
+# we will do this for each condition
+# To do this, it's just a matter of getting the time series for each subject and condition
+
+# pick a single marker to do the analysis on
+sel_marker <- "hand_right_z"
+conds <- unique(selected_traj_data$condition)
+# define the window size (in samples)
+# this is how far ahead and behind we can look for a match
+# given a sample rate of 300 Hz, 1 second is 300 samples
+window_size <- 300
+results <- list()
+for (cond in conds) {
+  # get the data for the condition
+  col_x <- paste0("A_", sel_marker)
+  col_y <- paste0("B_", sel_marker)
+  cond_data <- selected_traj_data %>% 
+    filter(condition == cond)
+  # now we can do the dynamic time warping for the marker between subjects
+  message(paste("Doing dynamic time warping for condition:", cond, "Marker:", sel_marker))
+  message("This may take a while...")
+  result <- dtw(
+    x = cond_data[, col_x],
+    y = cond_data[, col_y],
+    window.type = "sakoechiba",
+    window.size = window_size,
+    keep = TRUE
+  )
+  results[length(results) + 1] <- result$normalizedDistance
+  # plot the results
+  message("Plotting results...")
+  message("Generating alignment plot...")
+  plot(result, type = "alignment")
+  message("Generating twoway plot...")
+  plot(result, type = "twoway")
+  message("Generating threeway plot...")
+  plot(result, type = "threeway")
+  message("Generating density plot, burning computer...")
+  plot(result, type = "density")
+}
+
+# print the resulting normalized distances
+results
+
+```
+
