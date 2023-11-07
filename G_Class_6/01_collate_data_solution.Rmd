@@ -1,0 +1,444 @@
+---
+date: "2023-11-06"
+title: "Class G, Mocap data"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# to make things easy, we will use pacman. Please install it if you don't have it already
+# with install.packages("pacman")
+
+# packages to load
+pacman::p_load("XML", "tidyverse", "fs", "assertthat", "stringi")
+
+# make sure we are in the G_Class_6 directory
+wd <- getwd()
+if (basename(wd) != "G_Class_6") {
+  setwd("./G_Class_6")
+}
+
+# set the directory for the data
+data_dir <- path_home() %>% 
+  path("OneDrive - Aarhus universitet", "PercActMotionCapture", "labeled_data")
+
+# set your study group
+group_number <- 0
+
+
+# The available conditions and their start and end frame indices
+# to use the whole file, just set the value for the condition to c(NA, NA)
+conditions <- list(
+  jointlead = c(100, 10000),
+  followlead = c(100, 10000),
+  leadfollow = c(100, 10000),
+  custom = c(100, 10000)
+)
+
+
+
+```
+
+```{r helper_functions, include=FALSE}
+# adapted from
+# https://github.com/zeyus/QTM_Bela_Sonification/blob/main/scripts/step_01_import_raw_data.R
+
+process_qtm_tsv <- function(
+    data_file,
+    condition_regex = "group[0-9]+_([^_\\.]+).*",
+    null_value = "NA"
+  ) {
+  "This function processes a QTM TSV file and reads it into a dataframe.
+
+  You will get both the trajectory data (dataframe) as well as metadata.
+
+  Args:
+    data_file (str): The path to the QTM TSV file.
+    condition_regex (str): A regex to extract the condition from the file name.
+    null_value (str): The value in the files that represents a missing measurement.
+
+  Returns:
+    A list with two elements:
+      - data: The trajectory data as a dataframe.
+      - metadata: A list with the metadata.
+          The metadata contains the following elements:
+            - condition: The condition of the data.
+            - frequency: The frequency (Hz) of the data.
+            - marker_count: The number of markers.
+            - frame_count: The number of frames.
+            - marker_names: The names of the markers.
+  "
+
+  message(paste("Processing", data_file))
+
+  # get the condition
+  cond <- stri_match_last_regex(data_file, condition_regex)[2]
+  # make condition lowercase
+  cond <- tolower(cond)
+  message(paste("Condition:", cond))
+
+  # read in the data
+  dat <- readLines(data_file)
+
+  # now get other relevant metadata
+  # get frequency
+  freq <- stri_match_first_regex(dat, "^FREQUENCY.*")
+  freq <- freq[!is.na(freq)]
+
+  # get marker count
+  marker_count <- stri_extract_first_regex(dat, "^NO_OF_MARKERS.*")
+  marker_count <- marker_count[!is.na(marker_count)]
+  marker_count_value <- as.integer(stri_split_fixed(marker_count, "\t")[[1]][2])
+
+  # get frame count
+  frame_count <- stri_extract_first_regex(dat, "^NO_OF_FRAMES.*")
+  frame_count <- frame_count[!is.na(frame_count)]
+  frame_count_value <- as.integer(stri_split_fixed(frame_count, "\t")[[1]][2])
+
+  # get marker names
+  marker_names <- stri_extract_first_regex(dat, "^MARKER_NAMES.*")
+  marker_names <- marker_names[!is.na(marker_names)]
+  marker_names_values <- stri_split_fixed(
+    marker_names,
+    "\t"
+  )[[1]][1:marker_count_value + 1]
+  message("File information:")
+  message(paste(freq, "Hz", "frequency"))
+  message(paste(marker_count_value, "markers"))
+  message(paste(frame_count_value, "frames"))
+
+  # now just keep the tracking information
+  dat <- stri_extract_first_regex(dat, "^[0-9]+\t.*")
+  dat <- dat[!is.na(dat)]
+
+  # now ensure the number of frames is correct
+  # this is the number of lines in the data
+  assertthat::assert_that(
+    length(dat) == frame_count_value,
+    msg = paste(
+      "Number of frames is not correct, found:",
+      length(dat),
+      "expected:",
+      frame_count_value)
+  )
+
+  # ensure the number of markers is correct
+  # this is 3 columns per marker, plus index and time
+  num_found_markers <- length(stri_split_fixed(dat[[1]], "\t")[[1]])
+  assertthat::assert_that(
+    num_found_markers == marker_count_value * 3 + 2,
+    msg = paste(
+      "Number of markers is not correct, found:",
+      num_found_markers,
+      "expected:",
+      marker_count_value * 3 + 2)
+  )
+
+  message(paste("File has", length(dat), "frames"))
+  message(paste("File has", marker_count_value, "markers"))
+
+  message("Creating data frame...")
+
+  col_names <- c(
+    "index",
+    "elapsed_time",
+    paste0(
+      rep(marker_names_values, each = 3),
+      c("_x", "_y", "_z")
+    )
+  )
+
+
+  # now we need to create a data frame
+  
+  # split each line by tab
+  dat <- stri_split_fixed(dat, "\t", simplify = TRUE)
+  # set the column names
+  colnames(dat) <- col_names
+  # and then convert to a data frame
+  dat <- as_tibble(dat)
+  # now we need to replace the null values with NA
+  dat[dat == null_value] <- NA
+  # and convert to numeric
+  dat <- mutate_all(dat, as.numeric)
+
+  metadata <- list(
+    condition = cond,
+    frequency = freq,
+    marker_count = marker_count,
+    frame_count = frame_count,
+    marker_names = marker_names
+  )
+
+  # return the data and metadata
+  return(list(data = dat, metadata = metadata))
+
+}
+
+```
+
+```{r 'Load Trajectory Labels'}
+# load the labels from the XML file
+
+# load the XML file
+xmlfile <- xmlParse("./resources/PerAct23_LabelList.xml")
+
+# get the labels, which are in the following format:
+# <QTM_Label_List_Ver_1.00>
+#     <Trajectories>
+#         <Trajectory>
+#             <Name>A_head_top</Name>
+#             <Color R="0" G="147" B="0"/>
+#         </Trajectory>
+#     </Trajectories>
+# </QTM_Label_List_Ver_1.00>
+
+# get the trajectory names
+traj_names <- xpathSApply(xmlfile, "//Trajectory/Name", xmlValue)
+
+# get the trajectory colors
+traj_colors <- xpathSApply(xmlfile, "//Trajectory/Color", xmlAttrs)
+
+# convert the colors to hex
+traj_colors <- rgb(
+  as.numeric(traj_colors[1,]),
+  as.numeric(traj_colors[2,]),
+  as.numeric(traj_colors[3,]),
+  alpha = 255,
+  maxColorValue = 255
+)
+
+
+# combine the names and colors into a data frame
+traj_labels <- data.frame(
+  traj_names,
+  traj_colors,
+  stringsAsFactors = FALSE
+)
+
+rm(xmlfile, traj_names, traj_colors)
+
+```
+
+```{r 'Load Trajectory Data'}
+
+# load the trajectory data, we want all TSVs with the group number in the name
+
+# get the files
+traj_files <- fs::dir_ls(data_dir, regexp = paste0("group", group_number, "_.*\\.tsv$"))
+
+# load the data
+traj_data <- lapply(traj_files, process_qtm_tsv)
+
+
+# now we need to combine the data into a single data frame
+
+# first we need to add the condition and group to each data frame
+traj_data <- lapply(traj_data, function(x) {
+  x$data$condition <- x$metadata$condition
+  x$data$group <- paste0("group", group_number)
+  return(x)
+})
+
+# now we can combine the data
+traj_data <- do.call(bind_rows, lapply(traj_data, `[[`, "data"))
+
+# make the condition and group factors
+traj_data$condition <- factor(traj_data$condition)
+traj_data$group <- factor(traj_data$group)
+
+# take a look at the data
+head(traj_data)
+
+# let's also make sure that all of the marker names are the same
+# we can do this by getting the unique marker names
+marker_names <- unique(traj_data %>% select(contains("_x")) %>% names() %>% stri_replace_last_regex("_x", ""))
+
+# now we can check that all of the marker names are the same
+assertthat::assert_that(
+  all(marker_names == traj_labels$traj_names),
+  msg = "Not all marker names are the same"
+)
+```
+
+```{r 'Crop trajectory data'}
+
+# We want to crop the data for each condition
+# let's get all the recorded conditions
+recorded_conditions <- unique(traj_data$condition)
+for (cond in recorded_conditions) {
+  # get the start and end frame for the condition
+  start_frame <- conditions[[cond]][1]
+  if (is.na(start_frame)) start_frame <- 1
+  end_frame <- conditions[[cond]][2]
+  if (is.na(end_frame)) end_frame <- max(traj_data[traj_data$condition == cond, "index"])
+  # crop the data
+  traj_data <- traj_data %>% 
+    filter(condition == cond & index >= start_frame & index <= end_frame | condition != cond)
+}
+
+# select min and max indices by condition
+traj_data %>% 
+  group_by(condition) %>% 
+  summarise(min_index = min(index), max_index = max(index))
+
+
+```
+
+
+```{r 'Gap-fill trajectory data'}	
+# we are only going to do a linear gap fill, it's not elegant, but it works
+# we will do this for each marker x, y, and z
+
+# let's sanity-check the data to make sure the proportion of NAs for a given marker
+# is not too high, also we can find the longest sequence of NAs for a given marker
+nas_by_marker <- traj_data %>% 
+  select(contains("_x")) %>% 
+  is.na() %>% 
+  colSums() %>% 
+  as_tibble() %>%
+  mutate(marker = marker_names) %>%
+  arrange(desc(value))
+
+# This needs to be checked to see if it is acceptable
+nas_by_marker %>% 
+  mutate(
+    marker = factor(marker, levels = nas_by_marker$marker),
+    value = value / nrow(traj_data)
+  ) %>% 
+  ggplot(aes(x = marker, y = value, fill=marker)) +
+  geom_col(
+    show.legend = FALSE
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    x = "Marker",
+    y = "Proportion of NA values",
+    title = "Proportion of NA values by marker"
+  )
+
+# Now we can get the longest sequence of NAs for each marker
+longest_na_seq <- traj_data %>% 
+  select(contains("_x")) %>% 
+  is.na() %>% 
+  apply(2, rle)
+
+# keep only the max lengths per marker
+longest_na_seq <- lapply(longest_na_seq, function(x) {
+  x <- x$lengths
+  x <- max(x)
+  return(x)
+})
+seq_markers <- names(longest_na_seq)
+longest_na_seq <- longest_na_seq %>%
+  unlist() %>%
+  as_tibble() %>% 
+  mutate(marker = seq_markers) %>% 
+  arrange(desc(value))
+
+# plot to check if it is acceptable
+longest_na_seq %>% 
+  mutate(
+    marker = factor(marker, levels = longest_na_seq$marker),
+    value = value
+  ) %>% 
+  ggplot(aes(x = marker, y = value, fill=marker)) +
+  geom_col(
+    show.legend = FALSE
+  ) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    x = "Marker",
+    y = "Length of longest NA sequence",
+    title = "Longest sequence of NA values by marker"
+  )
+
+# first we can define a function to gap fill a single column
+gap_fill <- function(x) {
+  # get the indices of the NA values
+  na_indices <- which(is.na(x))
+  # get the indices of the non-NA values
+  non_na_indices <- which(!is.na(x))
+
+  if (length(na_indices) == 0) {
+    # if there are no NA values, just return the vector
+    return(x)
+  }
+
+  if (length(non_na_indices) < 2) {
+    # if there are less than 2 non-NA values, we can't do a linear interpolation
+    return(x)
+  }
+  # get the values of the non-NA indices
+  non_na_values <- x[non_na_indices]
+  # get the values of the NA indices
+  na_values <- x[na_indices]
+  # now we can do a linear interpolation
+  na_values <- approx(
+    x = non_na_indices,
+    y = non_na_values,
+    xout = na_indices,
+    method = "linear"
+  )$y
+  # now we can replace the NA values with the interpolated values
+  x[na_indices] <- na_values
+  # and return the vector
+  return(x)
+}
+
+# plot a single marker's x, y, and z values before and after gap filling
+traj_data %>% 
+  select(contains("B_hand_left")) %>% 
+  pivot_longer(
+    cols = contains("B_hand_left"),
+    names_to = "marker",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    index = row_number(),
+    marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
+  ) %>% 
+  ggplot(aes(x = index, y = value, color = marker)) +
+  geom_line() +
+  facet_wrap(~marker, scales = "free_y") +
+  theme_minimal() +
+  labs(
+    x = "Frame index",
+    y = "Marker position",
+    title = "Marker position before gap filling"
+  )
+
+# now we can apply this function to each column
+traj_data <- traj_data %>% 
+  mutate_at(vars(contains("_x")), gap_fill) %>% 
+  mutate_at(vars(contains("_y")), gap_fill) %>% 
+  mutate_at(vars(contains("_z")), gap_fill)
+
+# plot a single marker's x, y, and z values before and after gap filling
+traj_data %>% 
+  select(contains("B_hand_left")) %>% 
+  pivot_longer(
+    cols = contains("B_hand_left"),
+    names_to = "marker",
+    values_to = "value"
+  ) %>% 
+  mutate(
+    index = row_number(),
+    marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
+  ) %>% 
+  ggplot(aes(x = index, y = value, color = marker)) +
+  geom_line() +
+  facet_wrap(~marker, scales = "free_y") +
+  theme_minimal() +
+  labs(
+    x = "Frame index",
+    y = "Marker position",
+    title = "Marker position after gap filling"
+  )
+
+```
+
+
+```{r 'Plot trajectory data'}
