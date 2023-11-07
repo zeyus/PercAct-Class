@@ -389,9 +389,9 @@ marker_distances <- traj_data %>%
   group_by(condition, subject, marker) %>%
   arrange(index) %>%
   mutate(
-    diff_x = x - lag(x, 1),
-    diff_y = y - lag(y, 1),
-    diff_z = z - lag(z, 1)
+    diff_x = x - dplyr::lag(x, 1),
+    diff_y = y - dplyr::lag(y, 1),
+    diff_z = z - dplyr::lag(z, 1)
   )
   
 
@@ -403,8 +403,8 @@ marker_distances <- marker_distances %>%
 
 # now we can plot the series for each marker, and see if anything stands out
 marker_distances %>% 
-  ggplot(aes(x = index, y = euclidean_distance, color = marker)) +
-  geom_line(linewidth=1.25) +
+  ggplot(aes(x = index, y = euclidean_distance)) +
+  geom_line(aes(color = factor(marker)), linewidth=1.25) +
   theme_minimal() +
   facet_wrap(c(~condition, ~subject)) +
   labs(
@@ -413,6 +413,13 @@ marker_distances %>%
     title = "Euclidean distance from previous frame by marker"
   )
 
+ggsave(
+  filename = "./results/euclidean_distance_by_marker.png",
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
 
 ```
 
@@ -443,6 +450,15 @@ nas_cond_marker %>%
     title = "NA count by marker"
   )
 
+ggsave(
+  filename = "./results/NA_count_by_marker.png",
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
+
+
 # Now we can get the longest sequence of NAs for each marker
 longest_na_seq <- traj_data %>% 
   group_by(condition, subject, marker) %>%
@@ -465,6 +481,14 @@ longest_na_seq %>%
     y = "Longest NA sequence",
     title = "Longest NA sequence by marker"
   )
+
+ggsave(
+  filename = "./results/longest_na_sequence_by_marker.png",
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
 
 ```
 
@@ -495,7 +519,8 @@ selected_traj_data <- traj_data %>%
 sel_idx = 1
 
 # plot a single marker's x, y, and z values before and after gap filling
-selected_traj_data %>% 
+selected_traj_data %>%
+  dplyr::filter(marker == markers_of_interest[sel_idx]) %>%
   ggplot(aes(x = elapsed_time, y = x, color = subject)) +
   geom_line() +
   theme_minimal() +
@@ -503,8 +528,19 @@ selected_traj_data %>%
   labs(
     x = "Elapsed time",
     y = "Marker X position",
-    title = "Marker X position before gap filling"
+    title = paste("Marker", markers_of_interest[sel_idx], "X position before gap filling")
   )
+
+ggsave(
+  filename = paste0(
+    "./results/marker_",
+    markers_of_interest[sel_idx],
+    "_x_position_before_gap_filling.png"),
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
 
 # now we can apply our linear gap fill function to each column, by condition
 selected_traj_data <- selected_traj_data %>% 
@@ -515,7 +551,8 @@ selected_traj_data <- selected_traj_data %>%
   )
 
 # plot a single marker's x, y, and z after gap filling
-selected_traj_data %>% 
+selected_traj_data %>%
+  dplyr::filter(marker == markers_of_interest[sel_idx]) %>%
   ggplot(aes(x = elapsed_time, y = x, color = subject)) +
   geom_line() +
   theme_minimal() +
@@ -523,8 +560,20 @@ selected_traj_data %>%
   labs(
     x = "Elapsed time",
     y = "Marker X position",
-    title = "Marker X position after gap filling"
+    title = paste("Marker", markers_of_interest[sel_idx], "X position after gap filling")
   )
+
+ggsave(
+  filename = paste0(
+    "./results/marker_",
+    markers_of_interest[sel_idx],
+    "_x_position_after_gap_filling.png"),
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
+
 ```
 
 
@@ -589,6 +638,15 @@ xcor_results %>%
     y = "Autocorrelation",
     title = "Autocorrelation by lag"
   )
+
+# save the plot
+ggsave(
+  filename = "./results/autocorrelation_by_lag.png",
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
 
 # let's also get the min and max autocorrelation for each condition and marker
 xcor_results %>%
@@ -702,6 +760,15 @@ xcor_results %>%
     y = "Window start",
     title = "Autocorrelation by lag and window start"
   )
+
+# save the plot
+ggsave(
+  filename = "./results/autocorrelation_by_lag_and_window_start.png",
+  width = 10,
+  height = 10,
+  units = "cm",
+  dpi = 300
+)
 
 ```
 
