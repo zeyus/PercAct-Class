@@ -1,8 +1,13 @@
 ---
 date: "2023-11-06"
 title: "Class G, Mocap data"
+author: "Luke Ring / zeyus"
 output: html_document
 ---
+
+# Normal setup stuff
+
+You will have to change a few things here...
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -29,8 +34,10 @@ wd <- getwd()
 if (basename(wd) != "G_Class_6") {
   setwd("./G_Class_6")
 }
-dev.off()
+
 # set the directory for the data
+# note, path_home() will return the path to your home directory
+# your home directory is the one that contains your documents, downloads, etc.
 data_dir <- path_home() %>% 
   path("OneDrive - Aarhus universitet", "PercActMotionCapture", "labeled_data", "tsvs")
 
@@ -49,6 +56,16 @@ conditions <- list(
 
 
 ```
+
+# Defining some helper functions
+
+These you don't need to worry too much about, this is mainly the boring data collation stuff.
+
+I have defined a `gap_fill_linear` function that is a useful concept to understand at least.
+With mocap trajectories, often some data might be missing due to markers being occluded etc.
+When this happens, we need to either discard those segments (or pick segments with full coverage),
+or alternatively, we can gap fill the missing data. This implementation is the most basic possible gap
+filling, it essentially draws a straight line between the two points either side of the missing data.
 
 ```{r helper_functions, include=FALSE}
 # adapted from
@@ -232,6 +249,10 @@ gap_fill_linear <- function(x) {
 
 ```
 
+And so, some more boring stuff...
+This is just getting the labels so we can make sure that the tracked markes match up with what we expected,
+really, this shouldn't go wrong, but if you don't check this kind of thing you'll end up scratching your head
+later wondering why everything broke.
 
 ```{r 'Load Trajectory Labels'}
 # load the labels from the XML file
@@ -275,6 +296,11 @@ traj_labels <- data.frame(
 rm(xmlfile, traj_names, traj_colors)
 
 ```
+
+# Load in the data
+
+Here is where we get the files that are of interest...Start with the ones from your group,
+if you're extra super keen, then you can also try broader analyses across groups.
 
 ```{r 'Load Trajectory Data'}
 
@@ -340,6 +366,15 @@ traj_data$marker <- factor(traj_data$marker, levels = marker_names)
 
 ```
 
+# Trim the trajectories
+
+Here's where you cut the start and ends off of the trajectores, this is useful for example
+when you know that there's some setup time or a delay from recording start to end, or if you just 
+want to look at a specific section of the data.
+
+If you set up the conditions correctly in the setup section, then you can just run this cell and it will
+crop the data for you.
+
 ```{r 'Crop trajectory data'}
 
 # We want to crop the data for each condition
@@ -373,6 +408,14 @@ traj_data %>%
 
 ```
 
+# Inspect the data
+
+I've included some ways here of inspecting the data to see if there are any obvious problems.
+
+## Check for large jumps in trajectory data
+
+This is a simple check to see if there are any large jumps in the data, this can indicate that there are
+some label errors (e.g. label `hand_left` became label `hand_right`), or that the data is just bad.
 
 ```{r 'Check for large jumps in trajectory data'}
 # we want to check for large jumps in the data
@@ -413,6 +456,7 @@ marker_distances %>%
     title = "Euclidean distance from previous frame by marker"
   )
 
+# save the plot
 ggsave(
   filename = "./results/euclidean_distance_by_marker.png",
   width = 10,
@@ -423,7 +467,14 @@ ggsave(
 
 ```
 
-```{r 'Get informatnion about NAs'}	
+# Check for NAs
+
+Specifically, this checks how much of a given trajectory is `NA` values and how long the longest sequence
+of `NA` values is. This can be useful for deciding whether to discard a marker or not.
+
+*Remember, you'll want to make sure that both subject A and B have at least one good quality matching marker.*
+
+```{r 'Get information about NAs'}	
 
 # get NAs counts
 # by condition, marker, subject and axis
@@ -492,6 +543,11 @@ ggsave(
 
 ```
 
+# Pick your poison
+
+You can choose one or more markers and put them in the `markers_of_interest` variable below. This will
+then be used for the rest of the analysis.
+
 ```{r 'Choose markers of interest'}
 # we want to choose the markers of interest
 # we will choose the following markers:
@@ -511,11 +567,16 @@ selected_traj_data <- traj_data %>%
 
 ```
 
+# Gap filling
+
+Now that we're left with mainly the data we want to work with, we can do some gap filling to eliminate
+any `NA` values, just beware that it can't fill NAs at the start or end of the data.
+
 ```{r 'Gap fill trajectory data'}
 # we are only going to do a linear gap fill, it's not elegant, but it works
 # we will do this for each marker x, y, and z
 
-# choose a single marker for plotting purposes only
+# choose a single marker from markers_of_interest for plotting purposes only
 sel_idx = 1
 
 # plot a single marker's x, y, and z values before and after gap filling
@@ -576,6 +637,16 @@ ggsave(
 
 ```
 
+# ANALYSIS TIME 🥳
+
+Let's get to it. This is a Cross correlation analysis. This works by correlating the time series of one marker
+for subject A with the time series of the same marker for subject B. This can be useful for seeing if there is
+any lag between the two subjects, or if there is any correlation between the two subjects.
+
+What do you think lag means? What does correlated in this context mean?
+
+Try and think about this in the context of movement, and then include the fact that the data is represented
+as numbers along an axis, will this affect anything?
 
 ```{r 'Cross correlation analysis'}
 # we want to do a cross correlation analysis
@@ -659,6 +730,15 @@ xcor_results %>%
   )
 
 ```
+
+# Windowed cross correlation analysis
+
+This is the same as above, but we will do it in windows. This can be useful for seeing if there are any
+changes in the correlation over time.
+
+How does this relate to synchrony?
+
+Have a play around with the parameters below, see what happens.
 
 ```{r 'Windowed cross correlation analysis'}
 # windowed version of the cross correlation analysis
@@ -771,6 +851,13 @@ ggsave(
 )
 
 ```
+
+# Dynamic time warping
+
+This is a way of comparing two time series that is used in speech recognition,
+music information retrieval, neuroscience, and many other fields.
+
+Try messing around with the decimate_factor, window size, etc.
 
 ```{r 'Dynamic time warping for a single marker'}
 # we want to do dynamic time warping for a single marker
@@ -933,6 +1020,14 @@ results
 
 ```
 
+# Transfer entropy analysis
+
+This is a way of measuring the transfer of information between two time series. In the context 
+of the movement of two subjects, this can be useful for seeing if one subject is leading the other, for example.
+
+Can you think of any other ways this might be useful?
+
+
 ```{r 'Transfer entropy analysis'}
 # we want to do a transfer entropy analysis
 sel_marker <- markers_of_interest[1]
@@ -1003,3 +1098,11 @@ results
 ```
 
 
+# What's next?
+
+You can try different markers, groups, etc. You can also think of ways to use the numbers you get out of the analysis
+to make some kind of statement about the movement of the subjects.
+
+How might you go about doing this across multiple trials, subjects, etc.?
+
+<3
