@@ -20,7 +20,7 @@ if (basename(wd) != "G_Class_6") {
 
 # set the directory for the data
 data_dir <- path_home() %>% 
-  path("OneDrive - Aarhus universitet", "PercActMotionCapture", "labeled_data")
+  path("OneDrive - Aarhus universitet", "PercActMotionCapture", "labeled_data", "tsvs")
 
 # set your study group
 group_number <- 0
@@ -334,42 +334,60 @@ traj_data %>%
 # we are only going to do a linear gap fill, it's not elegant, but it works
 # we will do this for each marker x, y, and z
 
-# get NAs by condition, and marker
-
-
-
-# This needs to be checked to see if it is acceptable
-nas_by_marker %>% 
+# get NAs counts
+# by condition, marker
+nas_cond_marker <- traj_data %>%
+  select(condition | contains("_X")) %>%
+  group_by(condition) %>%
+  summarise_at(
+    vars(contains("_X")),
+    ~ sum(is.na(.)) / length(.) * 100
+  ) %>%
+  pivot_longer(
+    cols = contains("_X"),
+    cols_vary = "slowest",
+    names_to = "marker",
+    values_to = "value"
+  ) %>%
   mutate(
-    marker = factor(marker, levels = nas_by_marker$marker),
-    value = value / nrow(traj_data)
-  ) %>% 
+    marker = stri_replace_last_regex(marker, "_X", "")
+  )
+
+
+# plot to check if it is acceptable
+nas_cond_marker %>% 
   ggplot(aes(x = marker, y = value, fill=marker)) +
   geom_col(
     show.legend = FALSE
   ) +
   coord_flip() +
   theme_minimal() +
+  facet_wrap(~condition) +
   labs(
     x = "Marker",
-    y = "Proportion of NA values",
-    title = "Proportion of NA values by marker"
+    y = "Number of NA values",
+    title = "Number of NA values by marker"
   )
 
 
 # Now we can get the longest sequence of NAs for each marker
 longest_na_seq <- traj_data %>% 
-  select(contains("_x")) %>% 
-  is.na() %>% 
-  apply(2, rle)
+  select(condition | contains("_x")) %>%
+  group_by(condition) %>%
+  summarise_at(
+    vars(contains("_x")),
+    ~ max(rle(is.na(.))$lengths)
+  ) %>%
+  pivot_longer(
+    cols = contains("_x"),
+    cols_vary = "slowest",
+    names_to = "marker",
+    values_to = "lengths"
+  ) %>%
+  mutate(
+    marker = stri_replace_last_regex(marker, "_x", "")
+  )
 
-# keep only the max lengths per marker
-longest_na_seq <- lapply(longest_na_seq, function(x) {
-  x <- x$lengths
-  x <- max(x)
-  return(x)
-})
-seq_markers <- names(longest_na_seq)
 longest_na_seq <- longest_na_seq %>%
   unlist() %>%
   as_tibble() %>% 
@@ -378,26 +396,24 @@ longest_na_seq <- longest_na_seq %>%
 
 # plot to check if it is acceptable
 longest_na_seq %>% 
-  mutate(
-    marker = factor(marker, levels = longest_na_seq$marker),
-    value = value
-  ) %>% 
-  ggplot(aes(x = marker, y = value, fill=marker)) +
+  ggplot(aes(x = marker, y = lengths, fill=marker)) +
   geom_col(
     show.legend = FALSE
   ) +
   coord_flip() +
   theme_minimal() +
+  facet_wrap(~condition) +
   labs(
     x = "Marker",
-    y = "Length of longest NA sequence",
-    title = "Longest sequence of NA values by marker"
+    y = "Longest NA sequence",
+    title = "Longest NA sequence by marker"
   )
 
 
 # plot a single marker's x, y, and z values before and after gap filling
 traj_data %>% 
   select(contains("B_hand_left") | elapsed_time) %>% 
+  group_by(condition) %>%
   pivot_longer(
     cols = contains("B_hand_left"),
     cols_vary = "slowest",
@@ -405,8 +421,6 @@ traj_data %>%
     values_to = "value"
   ) %>%
   mutate(
-    elapsed_time = rep(traj_data$elapsed_time, 3),
-    condition = rep(traj_data$condition, 3),
     marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
   ) %>%
   ggplot(aes(x = elapsed_time, y = value, color = marker)) +
@@ -438,23 +452,22 @@ traj_data <- traj_data %>%
 # plot a single marker's x, y, and z values before and after gap filling
 traj_data %>% 
   select(contains("B_hand_left") | elapsed_time) %>% 
+  group_by(condition) %>%
   pivot_longer(
     cols = contains("B_hand_left"),
     cols_vary = "slowest",
     names_to = "marker",
     values_to = "value"
-  ) %>% 
+  ) %>%
   mutate(
-    elapsed_time = rep(traj_data$elapsed_time, 3),
-    condition = rep(traj_data$condition, 3),
     marker = factor(marker, levels = c("B_hand_left_x", "B_hand_left_y", "B_hand_left_z"))
-  ) %>% 
+  ) %>%
   ggplot(aes(x = elapsed_time, y = value, color = marker)) +
   geom_line() +
   theme_minimal() +
   facet_wrap(~condition) +
   labs(
-    x = "Frame index",
+    x = "Elapsed time",
     y = "Marker position",
     title = "Marker position after gap filling"
   )
