@@ -47,10 +47,10 @@ group_number <- 0
 # The available conditions and their start and end frame indices
 # to use the whole file, just set the value for the condition to c(NA, NA)
 conditions <- list(
-  jointlead = c(100, 10000),
-  followlead = c(100, 10000),
-  leadfollow = c(100, 10000),
-  custom = c(100, 10000)
+  jointlead = c(NA, NA),
+  followlead = c(NA, NA),
+  leadfollow = c(NA, NA),
+  custom = c(NA, NA)
 )
 
 
@@ -312,7 +312,6 @@ traj_files <- fs::dir_ls(data_dir, regexp = paste0("group", group_number, "_.*\\
 # load the data
 traj_data <- lapply(traj_files, process_qtm_tsv)
 
-
 # now we need to combine the data into a single data frame
 
 # first we need to add the condition and group to each data frame
@@ -355,15 +354,14 @@ traj_data <- traj_data %>%
     axis = stri_extract_last_regex(marker, "[xyz]$"),
     marker = stri_replace_first_regex(marker, "^[AB]_([a-zA-Z_]+)_[xyz]$", "$1")
   )
-
+traj_data
 # move axes to columns
 traj_data <- traj_data %>% 
   pivot_wider(
     names_from = axis,
     values_from = value
-  )
-traj_data$marker <- factor(traj_data$marker, levels = marker_names)
-
+  ))
+traj_data$marker <- factor(traj_data$marker)
 ```
 
 # Trim the trajectories
@@ -446,8 +444,8 @@ marker_distances <- marker_distances %>%
 
 # now we can plot the series for each marker, and see if anything stands out
 marker_distances %>% 
-  ggplot(aes(x = index, y = euclidean_distance)) +
-  geom_line(aes(color = factor(marker)), linewidth=1.25) +
+  ggplot(aes(x = index, y = euclidean_distance, color = marker)) +
+  geom_line(linewidth=1.25) +
   theme_minimal() +
   facet_wrap(c(~condition, ~subject)) +
   labs(
@@ -455,7 +453,7 @@ marker_distances %>%
     y = "Euclidean distance",
     title = "Euclidean distance from previous frame by marker"
   )
-
+marker_distances
 # save the plot
 ggsave(
   filename = "./results/euclidean_distance_by_marker.png",
@@ -648,6 +646,11 @@ What do you think lag means? What does correlated in this context mean?
 Try and think about this in the context of movement, and then include the fact that the data is represented
 as numbers along an axis, will this affect anything?
 
+`ccf` is a function from the `stats` package, you can read more about it here:
+https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/acf
+
+CCF calculates the cross correlation between two time series, and returns the correlation for each lag point.
+
 ```{r 'Cross correlation analysis'}
 # we want to do a cross correlation analysis
 # we know there are always two subjects, and the
@@ -674,6 +677,7 @@ for (marker in markers_of_interest) {
     # now we can do the cross correlation analysis
     # we will do this for each axis
     for (axis in c("x", "y", "z")) {
+      
       results <- ccf(
         x = cond_data[cond_data$subject == "A", axis],
         y = cond_data[cond_data$subject == "B", axis],
@@ -739,6 +743,10 @@ changes in the correlation over time.
 How does this relate to synchrony?
 
 Have a play around with the parameters below, see what happens.
+
+Again this uses the `ccf` function from `stats`, but the windowing is implemented manually here,
+there are packages you can get that automate the windowing of data in R, e.g. `zoo`.
+https://cran.r-project.org/web/packages/zoo/index.html
 
 ```{r 'Windowed cross correlation analysis'}
 # windowed version of the cross correlation analysis
@@ -858,6 +866,9 @@ This is a way of comparing two time series that is used in speech recognition,
 music information retrieval, neuroscience, and many other fields.
 
 Try messing around with the decimate_factor, window size, etc.
+
+The main function that runs the dynamic time warping is `dtw` from the `dtw` package.
+You can find more information here https://dtw.r-forge.r-project.org/
 
 ```{r 'Dynamic time warping for a single marker'}
 # we want to do dynamic time warping for a single marker
@@ -1026,6 +1037,9 @@ This is a way of measuring the transfer of information between two time series. 
 of the movement of two subjects, this can be useful for seeing if one subject is leading the other, for example.
 
 Can you think of any other ways this might be useful?
+
+There are various R packages for doing transfer entropy analysis, in this case we use the `RTransferEntropy` package.
+https://cran.r-project.org/web/packages/RTransferEntropy/vignettes/transfer-entropy.html
 
 
 ```{r 'Transfer entropy analysis'}
