@@ -677,7 +677,9 @@ for (marker in markers_of_interest) {
     # now we can do the cross correlation analysis
     # we will do this for each axis
     for (axis in c("x", "y", "z")) {
-      
+      # this is the function that runs the cross correlation
+      # time series one goes in x
+      # time series two goes in y
       results <- ccf(
         x = cond_data[cond_data$subject == "A", axis],
         y = cond_data[cond_data$subject == "B", axis],
