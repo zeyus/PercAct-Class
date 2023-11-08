@@ -1,0 +1,282 @@
+---
+date: "2023-11-08"
+title: "Class G, Mocap data"
+author: "Luke Ring / zeyus + <YOUR NAME HERE>"
+output: html_document
+---
+
+# Class G, Mocap data analysis
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# to make things easy, we will use pacman.
+# Please install it if you don't have it already
+# with install.packages("pacman")
+
+# packages to load
+pacman::p_load(
+  "XML",
+  "tidyverse",
+  "fs",
+  "assertthat",
+  "stringi",
+  "dtw",
+  "RTransferEntropy",
+  "signal",
+  "conflicted",
+  "Rcpp",
+  "future"
+)
+```
+
+Some setup...You will need to make sure the data_dir correctly points to where your .tsv files are.
+e.g., if your files are on your Desktop (please don't) in the folder `tsvs`, you would use:
+
+```{r, eval=FALSE}
+data_dir <- path_home() %>%
+  path(
+    "Desktop",
+    "tsvs"
+  )
+
+```
+
+Now you can update the `data_dir` variable below.
+
+**Note:** The `path_home()` function will just give you your home directory (e.g., `/Users/me` or `C:\Users\me`). The `path()` function will join together the different parts of the path.
+
+```{r 'More setup', include=FALSE}
+
+# make sure we are in the G_Class_6 directory
+wd <- getwd()
+if (basename(wd) != "G_Class_6") {
+  setwd("./G_Class_6")
+}
+
+# set the directory for the data
+# note, path_home() will return the path to your home directory
+# your home directory is the one that contains your documents, downloads, etc.
+data_dir <- path_home() %>%
+  path(
+    "Documents",
+    "PercActClass",
+    "labeled_data",
+    "tsvs"
+  )
+
+# load the mocap_utils.R file with helper functions
+source("mocap_utils.R")
+```
+
+## Load a single TSV file
+
+Choose which file you want to use, e.g. `group0_LeadFollow.tsv`.
+
+```{r 'Load data from a mocap session'}
+# set file name
+tsv_file_name <- "<FILE NAME HERE>"
+# load the file
+tsv_file_path <- path(data_dir, tsv_file_name)
+mocap_data <- process_qtm_tsv(
+  tsv_file_path,
+  only_data = TRUE,
+  long_format = TRUE
+)
+
+# take a look at the data
+mocap_data
+```
+
+## Extract marker data for both subjects
+
+Now that the data is ready to use, you need to pick a marker and axis for both subjects, for example,
+you may want to look at `hand_right` on the `z` axis. You could also consider comparing one suject's
+left hand with the other's right hand or anything else you want to try.
+
+```{r 'Extract marker data'}
+
+subj_a_data <- mocap_data %>%
+  dplyr::filter(
+    subject == "A",
+    marker == "hand_right",
+  )
+
+subj_b_data <- mocap_data %>%
+  dplyr::filter(
+    subject == "B",
+    marker == "hand_right",
+  )
+
+```
+
+## Plot the time series
+
+Take a look at the data, plot them, you might see some gaps, or you might want to start it a bit later or end it early.
+
+```{r 'Plot the time series'}
+
+# plot the data
+subj_a_data %>%
+  ggplot(aes(x = index, y = z)) +
+  geom_line() +
+  labs(
+    title = "Subject A",
+    x = "Index (sample)",
+    y = "z Position (mm)"
+  )
+
+subj_b_data %>%
+  ggplot(aes(x = index, y = z)) +
+  geom_line() +
+  labs(
+    title = "Subject B",
+    x = "Index (sample)",
+    y = "z Position (mm)"
+  )
+
+```
+
+## Remove tail and end
+
+You probably have somethin at the start you don't want to include (t-pose), maybe at the end as well.
+Try removing the start and end by the sample index and plot it again to see what it looks like after.
+
+```{r 'Remove start and end'}
+
+# the index that you want to start from
+start_index <- 0 # put a number here based on your plot
+# the index that you want to end at
+end_index <- 1000 # put a number here based on your plot
+
+# filter the data
+subj_a_data <- subj_a_data %>%
+  dplyr::filter(
+    index >= start_index, # only keep rows where index is greater than or equal to start_index
+    index <= end_index  # only keep rows where index is less than or equal to end_index
+  )
+subj_b_data <- subj_b_data %>%
+  dplyr::filter(
+    index >= start_index,
+    index <= end_index
+  )
+
+# plot it again and see if it looks better
+```
+
+## Get just the time series for z-axis
+
+We only want to work with one axis, so let's just get the time-series for both subjects.
+
+```{r 'Get just the time series for z-axis'}
+z_a <- subj_a_data$z
+z_b <- subj_b_data$z
+```
+
+## Fill gaps
+
+Most likely there are a few missing spots in the data, don't despair,
+I've provided a helper function to do a linear gap fill. Let's do that now.
+
+```{r 'Fill gaps'}
+
+# fill the gaps
+z_a_filled <- gap_fill_linear(z_a)
+z_b_filled <- gap_fill_linear(z_b)
+
+# plot it again and see if it looks better
+plot(z_a_filled)
+plot(z_b_filled)
+```
+
+## Run cross-correlation analysis
+
+Let's get to it. This is a Cross correlation analysis. This works by correlating the time series of one marker
+for subject A with the time series of the same marker for subject B. This can be useful for seeing if there is
+any lag between the two subjects, or if there is any correlation between the two subjects.
+
+What do you think lag means? What does correlated in this context mean?
+
+Try and think about this in the context of movement, and then include the fact that the data is represented
+as numbers along an axis, will this affect anything?
+
+`ccf` is a function from the `stats` package, you can read more about it here:
+https://www.rdocumentation.org/packages/stats/versions/3.6.2/topics/acf
+
+
+```{r 'Run cross-correlation analysis'}
+
+ccf_result <- ccf(
+  z_a_filled,
+  z_b_filled,
+  lag.max = 1000,
+  plot = FALSE,
+  na.action = na.omit
+)
+
+# plot the result
+plot(ccf_result)
+```
+
+## Run Dynamic Time warping
+
+This is a way of comparing two time series that is used in speech recognition,
+music information retrieval, neuroscience, and many other fields.
+The main function that runs the dynamic time warping is `dtw` from the `dtw` package.
+You can find more information here https://dtw.r-forge.r-project.org/
+
+Try changing the windowing method, etc to see how they compare. Try the different plot types as well.
+
+*Warning: This will take some time, DTW is very CPU intensive.*
+
+You may want to consider downsampling the data.
+
+```{r 'Run Dynamic Time warping'}
+
+# run the dtw
+dtw_result <- dtw(
+  z_a_filled,
+  z_b_filled,
+  window.type = "none",
+  keep.internals = TRUE
+)
+
+# plot the result
+plot(
+  dtw_result,
+  type = "alignment"
+)
+plot(
+  dtw_result,
+  type = "density"
+)
+```
+
+The main thing of interest that we get out of DTW is the distance between the two time series.
+This is either the total distance between the two, or a normalized distance (this is the one you would use
+if you were to compare multiple pairs of time series, e.g. different sujects, different conditions).
+
+```{r 'Get the distance'}
+# get the distance
+dtw_result$distance
+dtw_result$normalizedDistance
+```
+
+## Run Transfer Entropy
+
+This is a way of measuring the transfer of information between two time series. In the context 
+of the movement of two subjects, this can be useful for seeing if one subject is leading the other, for example.
+
+Can you think of any other ways this might be useful?
+
+There are various R packages for doing transfer entropy analysis, in this case we use the `RTransferEntropy` package.
+https://cran.r-project.org/web/packages/RTransferEntropy/vignettes/transfer-entropy.html
+
+```{r 'Run Transfer Entropy'}	
+# run the transfer entropy
+te_result <- transfer_entropy(
+  z_a_filled,
+  z_b_filled
+)
+
+te_result
+```
