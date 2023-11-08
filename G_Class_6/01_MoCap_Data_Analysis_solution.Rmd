@@ -360,7 +360,7 @@ traj_data <- traj_data %>%
   pivot_wider(
     names_from = axis,
     values_from = value
-  ))
+  )
 traj_data$marker <- factor(traj_data$marker)
 ```
 
@@ -434,7 +434,6 @@ marker_distances <- traj_data %>%
     diff_y = y - dplyr::lag(y, 1),
     diff_z = z - dplyr::lag(z, 1)
   )
-  
 
 # now we can calculate the euclidean distance per maker
 marker_distances <- marker_distances %>% 
@@ -575,8 +574,8 @@ any `NA` values, just beware that it can't fill NAs at the start or end of the d
 # we will do this for each marker x, y, and z
 
 # choose a single marker from markers_of_interest for plotting purposes only
-sel_idx = 1
-
+sel_idx <- 1
+ 
 # plot a single marker's x, y, and z values before and after gap filling
 selected_traj_data %>%
   dplyr::filter(marker == markers_of_interest[sel_idx]) %>%
@@ -792,6 +791,9 @@ for (marker in markers_of_interest) {
         # now we can do the cross correlation analysis
         results <- NULL
         tryCatch({
+          # this is the function that runs the cross correlation
+          # time series one goes in x
+          # time series two goes in y
           results <- ccf(
             x = subjA[window_start:window_end,],
             y = subjB[window_start:window_end,],
@@ -885,14 +887,14 @@ conds <- unique(selected_traj_data$condition)
 # you can play around with these values, but keep in mind
 # DTW is very processor heavy and can take some time
 
-axes_of_interest = c("x", "y")
+axes_of_interest <- c("x", "y")
 original_sample_rate <- 300
 
 decimate_factor <- 6 # meaning our new sample rate is 50 Hz
 window_size_samples <- 50 # meaning our window size is 1 second
 
 # this is a disgusting resampling method
-resampled_traj_data <- selected_traj_data %>% 
+resampled_traj_data <- selected_traj_data %>%
   group_by(condition, subject, marker) %>%
   dplyr::filter(
     index %% decimate_factor == 0
@@ -931,6 +933,10 @@ for (cond in conds) {
     result <- NULL
     tryCatch({
       # Do the actual DTW analysis
+      # x is the time series for subject A
+      # y is the time series for subject B
+      # the window type is sakoechiba, which is a type of window that
+      # constrains the warping path to a band (+/- window.size)
       result <- dtw(
           x = cond_data[cond_data$subject == "A", axis],
           y = cond_data[cond_data$subject == "B", axis],
@@ -1048,7 +1054,7 @@ https://cran.r-project.org/web/packages/RTransferEntropy/vignettes/transfer-entr
 # we want to do a transfer entropy analysis
 sel_marker <- markers_of_interest[1]
 conds <- unique(selected_traj_data$condition)
-axes_of_interest = c("x", "y")
+axes_of_interest = c("x", "y", "z")
 
 
 
