@@ -273,6 +273,7 @@ https://cran.r-project.org/web/packages/RTransferEntropy/vignettes/transfer-entr
 
 ```{r 'Run Transfer Entropy'}	
 # run the transfer entropy
+plan(multisession)
 te_result <- transfer_entropy(
   z_a_filled,
   z_b_filled
